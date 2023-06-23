@@ -7,6 +7,7 @@ Consists of 2 parts:
 This repository merely added a github workflow to automatically compile binaries for this new (13 compatible) fork.
 
 Installing binaries from artifact (these are modified from the DirectHW/Makefile):
+
 	sudo mkdir -p /usr/local/lib
 	sudo cp -R Artifacts/DirectHW.kext <path-to-S/L/E, L/E, or EFI/OC/Kexts - see Opencore Docs for kext locations)
 	sudo cp -R Artifacts/DirectHW.framework /Library/Frameworks/
