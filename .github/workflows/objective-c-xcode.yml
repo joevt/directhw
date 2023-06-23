@@ -18,6 +18,10 @@ jobs:
       - name: Xcodebuild 
         working-directory: ./DirectHW
         run: xcodebuild -alltargets -project DirectHW.xcodeproj
+        
+      - name: libs
+        working-directory: ./DirectHW
+        run: make libs
 
       - name: Upload to Artifacts
         uses: actions/upload-artifact@v3
