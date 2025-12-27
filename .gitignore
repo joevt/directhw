@@ -33,3 +33,13 @@ DerivedData/
 **/xcshareddata/WorkspaceSettings.xcsettings
 project.xcworkspace
 *.mode1
+
+## Build artifacts
+*.pkg
+*.dmg
+test_build/
+build/
+*.app
+*.framework
+*.kext
+

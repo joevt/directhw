@@ -1,5 +1,5 @@
 CC = cc
-CFLAGS = -arch arm64 -arch x86_64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -mmacosx-version-min=10.9 -O2 -Wall
+CFLAGS = -arch arm64 -arch x86_64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -mmacosx-version-min=10.3 -O2 -Wall
 
 all: AdiumApplescriptRunner
 

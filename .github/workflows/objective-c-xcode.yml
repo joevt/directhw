@@ -1,4 +1,4 @@
-name: Xcode - Build and Analyze (10.6+ target)
+name: Xcode - Build and Analyze (10.3+ target)
 
 on:
   push:
@@ -16,46 +16,180 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         
+      - name: Check Environment
+        run: |
+          echo "=== CI Environment Info ==="
+          echo "macOS Version: $(sw_vers -productVersion)"
+          echo "Xcode Version: $(xcodebuild -version | head -1)"
+          echo "Available SDKs:"
+          xcodebuild -showsdks | grep -E "(macOS|MacOSX)" || echo "No macOS SDKs found"
+          echo ""
+          echo "⚠️  Note: Xcode 16.4 may have compatibility issues with older macOS SDKs"
+          echo "   This is expected and the CI will handle it gracefully"
+        
       - name: Xcodebuild (Unsigned for CI)
         working-directory: ./DirectHW
         run: |
-          # Build without signing for CI/CD - users can sign locally if needed
-          xcodebuild -alltargets -project DirectHW.xcodeproj \
+          # Detect macOS version for proper project selection
+          MACOS_VERSION=$(sw_vers -productVersion | cut -d. -f1)
+          echo "macOS major version: $MACOS_VERSION"
+          
+          # Choose appropriate Xcode project based on macOS version
+          if [ "$MACOS_VERSION" -ge 15 ]; then
+            echo "Using modern DirectHW.xcodeproj for macOS $MACOS_VERSION"
+            XCODE_PROJ="DirectHW.xcodeproj"
+            BUILD_DIR="build/build15"
+          elif [ "$MACOS_VERSION" -ge 11 ]; then
+            echo "Using modern DirectHW.xcodeproj for macOS $MACOS_VERSION"
+            XCODE_PROJ="DirectHW.xcodeproj"
+            BUILD_DIR="build/build11"
+          else
+            echo "Using legacy DirectHW10.6.xcodeproj for macOS $MACOS_VERSION"
+            XCODE_PROJ="DirectHW10.6.xcodeproj"
+            BUILD_DIR="build/build10.6"
+          fi
+          
+          echo "=== Starting Xcode Build with $XCODE_PROJ ==="
+          # Create build directory before attempting to write log file
+          mkdir -p "$BUILD_DIR"
+          XCODE_BUILD_LOG="$BUILD_DIR/xcode_build.log"
+
+          # Capture build output for debugging
+          if xcodebuild -alltargets -project "$XCODE_PROJ" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            SYMROOT="$BUILD_DIR" \
+            -verbose 2> "$XCODE_BUILD_LOG"; then
+            echo "✅ Xcode build command completed"
+          else
+            echo "⚠️ Xcode build failed - this is expected with modern Xcode and older projects"
+
+            # Show error output for debugging if log file exists and has content
+            if [[ -f "$XCODE_BUILD_LOG" && -s "$XCODE_BUILD_LOG" ]]; then
+              echo "Xcode build errors (for debugging):"
+              cat "$XCODE_BUILD_LOG"
+            fi
+          fi
+          
+          # Check if build succeeded
+          if [ -d "$BUILD_DIR/Release" ] && [ -f "$BUILD_DIR/Release/libDirectHW.dylib" ]; then
+            echo "✅ Xcode build succeeded"
+            ls -la "$BUILD_DIR/Release/"
+          else
+            echo "❌ Xcode build failed or incomplete - will use make libs fallback"
+            # Create symlink for consistency with buildlatest expectation
+            mkdir -p build/buildlatest
+            ln -sf "$BUILD_DIR/Release" build/buildlatest/Release 2>/dev/null || :
+          fi
         
       - name: libs
         working-directory: ./DirectHW
         run: make libs
 
+      - name: Debug Build Outputs
+        working-directory: ./DirectHW
+        run: |
+          echo "=== Searching for all build outputs ==="
+          find . -name "*.dylib" -o -name "*.kext" -o -name "*.framework" | head -20
+          echo "=== Build directory structure ==="
+          ls -R build/ 2>/dev/null || echo "No build directory"
+
       - name: Create Package
         working-directory: ./DirectHW
         run: |
-          # Create unsigned package for CI/CD distribution
-          # Note: For production use, kext requires valid developer signature
-          # Users should re-sign with their certificates: codesign --force --sign "Developer ID" DirectHW.kext
+          echo "=== Creating Package ==="
           
           # Find the actual build directory
           BUILD_ROOT=""
-          for BUILD_DIR in "build/buildlatest/Release" "build/Release" "build/*/Release"; do
-            if [ -d "./$BUILD_DIR" ]; then
+          BUILD_SUCCESS=false
+          
+          # Check version-specific build directories first
+          for BUILD_DIR in "build/buildlatest/Release" "build/build15/Release" "build/build11/Release" "build/Release" "build/*/Release"; do
+            if [ -d "./$BUILD_DIR" ] && [ -f "./$BUILD_DIR/libDirectHW.dylib" ]; then
               BUILD_ROOT="./$BUILD_DIR"
-              echo "Found build directory: $BUILD_ROOT"
+              echo "✅ Found build directory: $BUILD_ROOT"
+              BUILD_SUCCESS=true
               break
             fi
           done
           
-          if [ -n "$BUILD_ROOT" ] && command -v pkgbuild >/dev/null 2>&1; then
-            pkgbuild --root "$BUILD_ROOT" \
-              --identifier com.directhw \
-              --version 1.0 \
-              --scripts . \
-              DirectHW.pkg || echo "Package creation with pkgbuild failed, continuing..."
-          elif [ -d "DirectHW.pmdoc" ]; then
-            packagemaker --doc DirectHW.pmdoc --id com.directhw --out DirectHW.pkg || echo "Package creation with packagemaker failed, continuing..."
+          if [ "$BUILD_SUCCESS" = true ]; then
+            echo "🎯 Using real build artifacts"
+            
+            # Create component packages that install to /usr/local
+            mkdir -p pkg_components/lib/usr/local/lib
+            mkdir -p pkg_components/kext/usr/local/kexts  
+            mkdir -p pkg_components/framework/usr/local/frameworks
+            mkdir -p pkg_scripts
+            
+            # Copy build artifacts to component structures
+            if [ -f "$BUILD_ROOT/libDirectHW.dylib" ]; then
+              cp "$BUILD_ROOT/libDirectHW.dylib" pkg_components/lib/usr/local/lib/
+              echo "✅ Copied library"
+            fi
+            if [ -d "$BUILD_ROOT/DirectHW.kext" ]; then
+              cp -r "$BUILD_ROOT/DirectHW.kext" pkg_components/kext/usr/local/kexts/
+              echo "✅ Copied kext"
+            fi
+            if [ -d "$BUILD_ROOT/DirectHW.framework" ]; then
+              cp -r "$BUILD_ROOT/DirectHW.framework" pkg_components/framework/usr/local/frameworks/
+              echo "✅ Copied framework"
+            fi
+            
+            # Copy postinstall script
+            if [ -f "postinstall" ]; then
+              cp postinstall pkg_scripts/
+              echo "✅ Copied postinstall script"
+            else
+              echo "⚠️  postinstall script not found - creating basic one"
+              echo "#!/bin/bash" > pkg_scripts/postinstall
+              echo "echo 'DirectHW postinstall completed'" >> pkg_scripts/postinstall
+              chmod +x pkg_scripts/postinstall
+            fi
+            
+            echo "=== Creating Component Packages ==="
+            # Create component packages
+            pkgbuild --root pkg_components/lib --identifier com.directhw.lib --version 1.0 --install-location /usr/local --scripts pkg_scripts DirectHW-lib.pkg && echo "✅ Library package created" || echo "❌ Library package failed"
+            pkgbuild --root pkg_components/kext --identifier com.directhw.kext --version 1.0 --install-location /usr/local --scripts pkg_scripts DirectHW-kext.pkg && echo "✅ Kext package created" || echo "❌ Kext package failed"  
+            pkgbuild --root pkg_components/framework --identifier com.directhw.framework --version 1.0 --install-location /usr/local --scripts pkg_scripts DirectHW-framework.pkg && echo "✅ Framework package created" || echo "❌ Framework package failed"
+            
+            # Create distribution XML
+            echo '<?xml version="1.0" encoding="utf-8"?>' > distribution.xml
+            echo '<installer-gui-script minSpecVersion="1">' >> distribution.xml
+            echo '    <title>DirectHW</title>' >> distribution.xml
+            echo '    <organization>com.directhw</organization>' >> distribution.xml
+            echo '    <options customize="never" require-scripts="false"/>' >> distribution.xml
+            echo '    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>' >> distribution.xml
+            echo '    <installer-script>' >> distribution.xml
+            echo '        <run-privileged/>' >> distribution.xml
+            echo '    </installer-script>' >> distribution.xml
+            echo '    <choices-outline>' >> distribution.xml
+            echo '        <line choice="lib"/>' >> distribution.xml
+            echo '        <line choice="framework"/>' >> distribution.xml
+            echo '    </choices-outline>' >> distribution.xml
+            echo '    <choice id="lib" title="DirectHW Library" description="DirectHW user library" start_selected="true">' >> distribution.xml
+            echo '        <pkg-ref id="com.directhw.lib"/>' >> distribution.xml
+            echo '    </choice>' >> distribution.xml
+            echo '    <choice id="framework" title="DirectHW Framework" description="DirectHW framework" start_selected="true">' >> distribution.xml
+            echo '        <pkg-ref id="com.directhw.framework"/>' >> distribution.xml
+            echo '    </choice>' >> distribution.xml
+            echo '    <pkg-ref id="com.directhw.lib" version="1.0" installKBytes="1">#DirectHW-lib.pkg</pkg-ref>' >> distribution.xml
+            echo '    <pkg-ref id="com.directhw.framework" version="1.0" installKBytes="1">#DirectHW-framework.pkg</pkg-ref>' >> distribution.xml
+            echo '</installer-gui-script>' >> distribution.xml
+            
+            # Create distribution package
+            productbuild --distribution distribution.xml --package-path . DirectHW.pkg 2>/dev/null || echo "Distribution package creation failed"
           else
-            echo "No package creation method available or no build directory found, skipping..."
+            echo "❌ CRITICAL: No build artifacts found - CI should fail to catch broken builds"
+            echo "This ensures that build failures are caught and fixed rather than silently ignored"
+            echo ""
+            echo "Troubleshooting information:"
+            echo "- Check Xcode build logs above for specific error details"
+            echo "- Verify that make libs fallback completed successfully"
+            echo "- Ensure libDirectHW.dylib was built and placed in the correct location"
+            echo "- Checked directories: build/build15/Release, build/build11/Release, build/buildlatest/Release, build/Release, build/*/Release"
+            exit 1
           fi
 
       - name: Build Universal AppleScript Runner
@@ -72,6 +206,7 @@ jobs:
 
       - name: Create DMG
         run: |
+          echo "=== Creating DMG ==="
           # Prepare DMG contents
           mkdir -p dmg_contents
           
@@ -81,49 +216,81 @@ jobs:
           find DirectHW -name "*.kext" -o -name "*.framework" -o -name "*.dylib" -o -name "*.pkg" 2>/dev/null || echo "No built artifacts found"
           
           # Copy build artifacts - check multiple possible build directories
-          for BUILD_DIR in "build/buildlatest/Release" "build/Release" "build/*/Release"; do
-            if [ -d "./DirectHW/$BUILD_DIR" ]; then
-              echo "Found build directory for DMG: ./DirectHW/$BUILD_DIR"
-              find ./DirectHW/$BUILD_DIR -name "*.kext" -exec cp -r {} dmg_contents/ \; 2>/dev/null
-              find ./DirectHW/$BUILD_DIR -name "*.framework" -exec cp -r {} dmg_contents/ \; 2>/dev/null
-              find ./DirectHW/$BUILD_DIR -name "*.dylib" -exec cp {} dmg_contents/ \; 2>/dev/null
-              find ./DirectHW/$BUILD_DIR -name "*.a" -exec cp {} dmg_contents/ \; 2>/dev/null
+          ARTIFACTS_FOUND=false
+
+          # First check for distribution package (preferred)
+          if [ -f "DirectHW/DirectHW.pkg" ]; then
+            cp "DirectHW/DirectHW.pkg" "dmg_contents/Install DirectHW.pkg"
+            echo "✅ Copied distribution package"
+            ARTIFACTS_FOUND=true
+          else
+            # Fallback to individual component packages
+            for PKG in "DirectHW/DirectHW-lib.pkg" "DirectHW/DirectHW-kext.pkg" "DirectHW/DirectHW-framework.pkg"; do
+              if [ -f "$PKG" ]; then
+                cp "$PKG" "dmg_contents/$(basename "$PKG")"
+                echo "✅ Copied $(basename "$PKG")"
+                ARTIFACTS_FOUND=true
+              fi
+            done
+          fi
+
+          # Also check for build directory artifacts
+          for BUILD_DIR in "DirectHW/build/build15/Release" "DirectHW/build/buildlatest/Release" "DirectHW/build/build11/Release" "DirectHW/build/Release" "DirectHW/build/*/Release"; do
+            if [ -d "$BUILD_DIR" ]; then
+              echo "📁 Found build directory for DMG: $BUILD_DIR"
+
+              # Copy available artifacts (may not have all types due to build failures)
+              find "$BUILD_DIR" -name "*.kext" -exec cp -r {} dmg_contents/ \; 2>/dev/null && echo "✅ Found kext files" && ARTIFACTS_FOUND=true
+              find "$BUILD_DIR" -name "*.framework" -exec cp -r {} dmg_contents/ \; 2>/dev/null && echo "✅ Found framework files" && ARTIFACTS_FOUND=true
+              find "$BUILD_DIR" -name "*.dylib" -exec cp {} dmg_contents/ \; 2>/dev/null && echo "✅ Found library files" && ARTIFACTS_FOUND=true
+              find "$BUILD_DIR" -name "*.a" -exec cp {} dmg_contents/ \; 2>/dev/null && echo "✅ Found static library files" && ARTIFACTS_FOUND=true
+
+              # If we found at least the library, consider it successful
+              if [ -f "$BUILD_DIR/libDirectHW.dylib" ]; then
+                ARTIFACTS_FOUND=true
+                echo "✅ Core library found - DMG creation possible"
+              fi
+
               break  # Use first found build directory
             fi
           done
-          
-          # Copy package if it exists
-          if [ -f "./DirectHW/DirectHW.pkg" ]; then
-            cp "./DirectHW/DirectHW.pkg" "dmg_contents/Install DirectHW.pkg"
-          fi
-          
+
           # Copy documentation
-          if [ -f "./DirectHW/ReadMe.rtf" ]; then
-            cp "./DirectHW/ReadMe.rtf" "dmg_contents/Read Me.rtf"
+          if [ -f "DirectHW/ReadMe.rtf" ]; then
+            cp "DirectHW/ReadMe.rtf" "dmg_contents/Read Me.rtf"
+            echo "✅ Copied ReadMe.rtf"
           fi
-          if [ -f "./DirectHW/Welcome.rtf" ]; then
-            cp "./DirectHW/Welcome.rtf" "dmg_contents/Welcome.rtf"
+          if [ -f "DirectHW/Welcome.rtf" ]; then
+            cp "DirectHW/Welcome.rtf" "dmg_contents/Welcome.rtf"
+            echo "✅ Copied Welcome.rtf"
           fi
           
           echo "=== DMG contents ==="
           ls -la dmg_contents/
           
           # Only create DMG if we have content
-          if [ "$(ls -A dmg_contents/)" ]; then
-            # Create DMG using create-dmg with custom layout
-            ./create-dmg/create-dmg \
-              --volname "DirectHW v1.5.1" \
-              --window-size 700 400 \
-              --icon-size 96 \
-              --icon "Install DirectHW.pkg" 200 200 \
-              --icon "DirectHW.framework" 350 200 \
-              --icon "DirectHW.kext" 500 200 \
-              --icon "Read Me.rtf" 200 300 \
-              --icon "Welcome.rtf" 350 300 \
-              DirectHW-v1.5.1.dmg \
-              dmg_contents/ || echo "DMG creation failed, but content exists"
+          if [ "$ARTIFACTS_FOUND" = true ] && [ "$(ls -A dmg_contents/)" ]; then
+            echo "🎯 Creating DMG with found content"
+            # Create DMG using hdiutil (more reliable than create-dmg in CI)
+            hdiutil create -volname "DirectHW v1.5.1" -srcfolder dmg_contents -ov -format UDZO DirectHW-v1.5.1.dmg
+            if [ $? -eq 0 ]; then
+              echo "✅ DMG created successfully"
+            else
+              echo "❌ DMG creation failed"
+              exit 1
+            fi
           else
-            echo "No content for DMG, skipping DMG creation"
+            echo "❌ CRITICAL: No content found for DMG creation - build artifacts missing"
+            echo "CI should fail when real build artifacts are not available"
+            echo ""
+            echo "Missing artifacts that should have been created:"
+            echo "- libDirectHW.dylib (core library)"
+            echo "- DirectHW.kext (kernel extension)"
+            echo "- DirectHW.framework (framework)"
+            echo "- DirectHW.pkg (installer package)"
+            echo ""
+            echo "This failure ensures broken builds are caught and fixed."
+            exit 1
           fi
 
       - name: Upload DMG Artifact
@@ -143,9 +310,33 @@ jobs:
           name: DirectHW-Build-Artifacts
           path: |
             DirectHW/build/buildlatest/Release/
+            DirectHW/build/build15/Release/
+            DirectHW/build/build11/Release/
             DirectHW/build/*/Release/
             DirectHW/*.pkg
             DirectHW/*.kext
             DirectHW/*.framework
             DirectHW/*.dylib
+            DirectHW/postinstall
+            DirectHW/pkg_scripts/
+            DirectHW/pkg_components/
+            DirectHW/distribution.xml
           if-no-files-found: warn
+
+      - name: CI Status Summary
+        if: always()
+        run: |
+          echo "=== CI Build Summary ==="
+          echo "📊 Build Status: $([ -d 'DirectHW/build/build15/Release' ] || [ -d 'DirectHW/build/buildlatest/Release' ] && echo '✅ SUCCESS' || echo '❌ FAILED - Xcode compatibility issue')"
+          echo "📦 Package Status: $([ -f 'DirectHW/DirectHW.pkg' ] && echo '✅ Distribution package created' || echo '⚠️  Using component packages')"
+          echo "💿 DMG Status: $([ -f 'DirectHW-v1.5.1.dmg' ] && echo '✅ DMG created' || echo '❌ DMG creation failed')"
+          echo ""
+          echo "🔧 Known Issues:"
+          echo "  - Xcode 16.4 has SDK compatibility issues with older macOS targets"
+          echo "  - For production builds, use Xcode 15.x or implement local signing"
+          echo "  - CI fails when builds fail - no mock artifacts are created"
+          echo ""
+          echo "📋 Next Steps:"
+          echo "  - Test the generated packages locally"
+          echo "  - Use self-signed certificates for kext development"
+          echo "  - Consider upgrading to newer Xcode for production builds"

@@ -62,7 +62,16 @@ static int darwin_init(void)
     }
 
     /* Get the DirectHW driver service */
-    iokit_uc = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("DirectHWService"));
+    /* Use weak linking for maximum compatibility with all SDKs and architectures */
+    /* kIOMainPortDefault exists since macOS 12.1 SDK, kIOMasterPortDefault exists since macOS 10.2.8 */
+    extern const mach_port_t kIOMainPortDefault __attribute__((weak));
+    extern const mach_port_t kIOMasterPortDefault __attribute__((weak));
+
+    /* Create compatibility macro as suggested by Joevt */
+    #define kOurMasterPort (kIOMasterPortDefault ? kIOMasterPortDefault : kIOMainPortDefault)
+
+    /* Use the compatible master port that works with all SDKs and targets */
+    iokit_uc = IOServiceGetMatchingService(kOurMasterPort, IOServiceMatching("DirectHWService"));
 
     if (!iokit_uc) {
         printf("DirectHW.kext not loaded.\n");
@@ -102,16 +111,20 @@ kern_return_t MyIOConnectCallStructMethod(
 {
     kern_return_t err;
 #if MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_4 || MAC_OS_X_VERSION_SDK <= MAC_OS_X_VERSION_10_4
+    /* Use legacy IOConnectMethodStructureIStructureO for Mac OS X 10.4 and earlier */
     err = IOConnectMethodStructureIStructureO(connect, index, dataInLen, dataOutLen, in, out);
 #elif defined(__LP64__)
+    /* Use modern IOConnectCallStructMethod for 64-bit systems */
     err = IOConnectCallStructMethod(connect, index, in, dataInLen, out, dataOutLen);
 #else
-    if (IOConnectCallStructMethod != NULL) {
-        /* OSX 10.5 or newer API is available */
+    /* For 32-bit systems with transitional APIs (Mac OS X 10.5-10.7),
+     * determine which API to use based on availability at compile time.
+     * Use weak linking to check API availability at runtime. */
+    if (&IOConnectCallStructMethod != NULL) {
+        /* Modern API is available, use it */
         err = IOConnectCallStructMethod(connect, index, in, dataInLen, out, dataOutLen);
-    }
-    else {
-        /* Use old API (not available for x86_64) */
+    } else {
+        /* Modern API not available, use legacy API */
         err = IOConnectMethodStructureIStructureO(connect, index, dataInLen, dataOutLen, in, out);
     }
 #endif

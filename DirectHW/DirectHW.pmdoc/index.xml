@@ -44,9 +44,9 @@
     </requirements>
     <flags/>
     <postinstall>
-        <action id="com.apple.packagemaker.actions.loadkext">
-            <value>com.coresystems.driver.DirectHW</value>
-	    <type>component</type>
+        <action id="com.apple.packagemaker.actions.runscript">
+            <value>postinstall</value>
+	    <type>script</type>
         </action>
     </postinstall>
     <item type="file">01directhw.xml</item>

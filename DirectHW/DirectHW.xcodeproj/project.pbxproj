@@ -429,7 +429,7 @@
 				INFOPLIST_FILE = "DirectHW-Info.plist";
 				INSTALL_GROUP = wheel;
 				INSTALL_OWNER = root;
-				MACOSX_DEPLOYMENT_TARGET = 10.6;
+				MACOSX_DEPLOYMENT_TARGET = 10.3;
 				MARKETING_VERSION = 1.6.2;
 				MODULE_NAME = com.coresystems.DirectHW;
 				MODULE_VERSION = 1.6.2;
@@ -459,7 +459,7 @@
 				INFOPLIST_FILE = "DirectHW-Info.plist";
 				INSTALL_GROUP = wheel;
 				INSTALL_OWNER = root;
-				MACOSX_DEPLOYMENT_TARGET = 10.6;
+				MACOSX_DEPLOYMENT_TARGET = 10.3;
 				MARKETING_VERSION = 1.6.2;
 				MODULE_NAME = com.coresystems.DirectHW;
 				MODULE_VERSION = 1.6.2;

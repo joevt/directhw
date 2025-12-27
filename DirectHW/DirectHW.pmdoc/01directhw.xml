@@ -15,11 +15,12 @@
         <mod>installFrom.path</mod>
         <mod>parent</mod>
         <mod>installTo</mod>
+        <scripts>../</scripts>
     </config>
     <contents>
         <file-list>01directhw-contents.xml</file-list>
-        <component id="com.coresystems.driver.DirectHW" path="build/DirectHW/System/Library/Extensions/DirectHW.kext" version="1.0"/>
-        <component id="com.coresystems.DirectHW" path="build/DirectHW/System/Library/Frameworks/DirectHW.framework" version="1.0"/>
+        <component id="com.coresystems.driver.DirectHW" path="build/DirectHW/Library/Extensions/DirectHW.kext" version="1.0"/>
+        <component id="com.coresystems.DirectHW" path="build/DirectHW/Library/Frameworks/DirectHW.framework" version="1.0"/>
         <filter>/CVS$</filter>
         <filter>/\.svn$</filter>
         <filter>/\.cvsignore$</filter>

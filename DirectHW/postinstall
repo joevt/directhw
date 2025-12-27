@@ -1,0 +1,107 @@
+#!/bin/bash
+
+# DirectHW Post-Install Script
+# This script handles system-agnostic kext installation for DirectHW
+
+set -e
+
+# Function to get macOS version
+get_macos_version() {
+    sw_vers -productVersion | cut -d. -f1-2
+}
+
+# Function to get kernel version
+get_kernel_version() {
+    uname -r | cut -d. -f1
+}
+
+# Function to determine kext installation path
+get_kext_path() {
+    local macos_version=$(get_macos_version)
+    local kernel_version=$(get_kernel_version)
+
+    # For modern macOS, always use /Library/Extensions (user-accessible)
+    # This avoids SIP restrictions on /System/Library/Extensions
+    echo "/Library/Extensions"
+}
+
+# Function to update kext cache
+update_kext_cache() {
+    local macos_version=$(get_macos_version)
+    local kext_path="$1"
+
+    echo "Updating kext cache for macOS $macos_version..."
+
+    # Proper version comparison for macOS 10.13+ (High Sierra and later)
+    # Convert version to comparable integer (multiply by 10000 for major.minor.patch format)
+    local version_int=$(( $(echo "$macos_version" | sed 's/\./ /' | awk '{print $1 * 10000 + $2 * 100 + ($3 ? $3 : 0)}') ))
+    local high_sierra_int=$((10 * 10000 + 13 * 100))  # 10.13 = 101300
+
+    if [[ $version_int -ge $high_sierra_int ]]; then
+        if command -v kmutil >/dev/null 2>&1; then
+            echo "Using kmutil to update kext cache..."
+            kmutil install --volume-root / --check-rebuild
+        else
+            echo "kmutil not found, falling back to touch"
+            touch "$kext_path" || true
+        fi
+    else
+        # Older macOS versions use kextcache
+        echo "Using kextcache to update system cache..."
+        kextcache -system-prelinked-kernel 2>/dev/null || kextcache -system-cache 2>/dev/null || true
+    fi
+}
+
+# Main installation logic
+main() {
+    local kext_path=$(get_kext_path)
+    local macos_version=$(get_macos_version)
+    local kernel_version=$(get_kernel_version)
+
+    echo "DirectHW Post-Install Script"
+    echo "macOS Version: $macos_version"
+    echo "Kernel Version: $kernel_version"
+    echo "Kext Installation Path: $kext_path"
+
+    # Move kext to correct location if needed
+    # Check if kext was installed in the wrong location during package installation
+    if [[ -d "/System/Library/Extensions/DirectHW.kext" && "$kext_path" == "/Library/Extensions" ]]; then
+        echo "Moving kext from /System/Library/Extensions to /Library/Extensions..."
+        # Remove existing destination if it exists to avoid nesting
+        [[ -d "/Library/Extensions/DirectHW.kext" ]] && rm -rf "/Library/Extensions/DirectHW.kext"
+        # Create destination directory if it doesn't exist
+        mkdir -p "/Library/Extensions"
+        # Move the kext
+        mv "/System/Library/Extensions/DirectHW.kext" "/Library/Extensions/DirectHW.kext"
+    elif [[ -d "/Library/Extensions/DirectHW.kext" && "$kext_path" == "/System/Library/Extensions" ]]; then
+        echo "Moving kext from /Library/Extensions to /System/Library/Extensions..."
+        # Remove existing destination if it exists to avoid nesting
+        [[ -d "/System/Library/Extensions/DirectHW.kext" ]] && rm -rf "/System/Library/Extensions/DirectHW.kext"
+        # Create destination directory if it doesn't exist
+        mkdir -p "/System/Library/Extensions"
+        # Move the kext
+        mv "/Library/Extensions/DirectHW.kext" "/System/Library/Extensions/DirectHW.kext"
+    fi
+
+    # Set proper permissions
+    if [[ -d "$kext_path/DirectHW.kext" ]]; then
+        echo "Setting permissions for $kext_path/DirectHW.kext..."
+        chown -R root:wheel "$kext_path/DirectHW.kext"
+        chmod -R 755 "$kext_path/DirectHW.kext"
+    fi
+
+    # Load the kext
+    if [[ -d "$kext_path/DirectHW.kext" ]]; then
+        echo "Loading DirectHW.kext..."
+        kextunload -v "$kext_path/DirectHW.kext" 2>/dev/null || true
+        kextload -v "$kext_path/DirectHW.kext"
+    fi
+
+    # Update kext cache
+    update_kext_cache "$kext_path"
+
+    echo "DirectHW installation completed successfully."
+}
+
+# Run main function
+main "$@"

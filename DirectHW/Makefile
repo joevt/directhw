@@ -18,21 +18,43 @@
 
 all: main libs
 
-is11   := $(shell bc <<< "$${OSTYPE\#darwin} == 20")
-is10_15 := $(shell bc <<< "$${OSTYPE\#darwin} == 19")
-is10_14 := $(shell bc <<< "$${OSTYPE\#darwin} == 18")
-is10_13 := $(shell bc <<< "$${OSTYPE\#darwin} == 17")
-is10_12 := $(shell bc <<< "$${OSTYPE\#darwin} == 16")
-is10_11 := $(shell bc <<< "$${OSTYPE\#darwin} == 15")
-is10_10 := $(shell bc <<< "$${OSTYPE\#darwin} == 14")
-is10_9 := $(shell bc <<< "$${OSTYPE\#darwin} == 13")
-is10_9plus := $(shell bc <<< "$${OSTYPE\#darwin} >= 13")
-is10_8 := $(shell bc <<< "$${OSTYPE\#darwin} == 12")
-is10_7 := $(shell bc <<< "$${OSTYPE\#darwin} == 11")
-is10_6 := $(shell bc <<< "$${OSTYPE\#darwin} == 10")
-is10_5 := $(shell bc <<< "$${OSTYPE\#darwin} == 9")
-is10_4 := $(shell bc <<< "$${OSTYPE\#darwin} == 8")
+# Note: OSTYPE-based version detection removed for consistency and reliability
+# Use sw_vers-based detection below for all version comparisons
 # Note: Do not append comments to makefile := assignment lines because spaces before the # become part of the assigned string.
+
+# Get macOS version using sw_vers for reliable detection
+# sw_vers -productVersion works in 10.3+ but not 10.2 and earlier
+# Fallback using perl works in 10.1 and later
+DETECTED_VERSION := $(shell sw_vers -productVersion 2>/dev/null | cut -d. -f1-2 || sw_vers 2>/dev/null | perl -ne 'if (/ProductVersion:\s*(\d+(\.\d+)?)/) { print $$1 }' | cut -d. -f1-2)
+# Error handling: if version detection failed, abort with clear error message
+ifeq ($(DETECTED_VERSION),)
+$(error Could not detect macOS version. Please ensure sw_vers is available.)
+endif
+macos_version := $(DETECTED_VERSION)
+
+# Version comparisons using proper macOS version detection
+# Convert to integer format (major*10000 + minor*100 + patch) for proper comparison
+is_sequoia_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 150000)
+
+# Detect build machine architecture for universal binary decisions
+build_arch := $(shell uname -m)
+is_arm64_build := $(if $(filter arm64,$(build_arch)),1,0)
+is_sonoma_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 140000)
+is_ventura_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 130000)
+is_monterey_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 120000)
+is_big_sur_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 110000)
+is_catalina_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 101500)
+is_mojave_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 101400)
+is_high_sierra_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 101300)
+is_sierra_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 101200)
+is_el_capitan_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 101100)
+is_yosemite_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 101000)
+is_mavericks_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 100900)
+is_mountain_lion_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 100800)
+is_lion_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 100700)
+is_snow_leopard_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 100600)
+is_leopard_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 100500)
+is_tiger_or_later := $(shell expr $(shell echo "$(macos_version)" | sed 's/\./ /' | awk '{print $$1 * 10000 + $$2 * 100 + ($$3 ? $$3 : 0)}') \>= 100400)
 
 # latestsdk := $(shell xcodebuild -showsdks | sort -r | sed -nE '/.*(-sdk macosx.*)/ { s//\1/;p;q; }')
 
@@ -41,87 +63,185 @@ build := build/buildlatest
 extensions := /System/Library/Extensions
 debugsym :=
 sdk := -sdk macosx
-deploy := MACOSX_DEPLOYMENT_TARGET=10.6
-arch := 
-ifeq ($(is11), 1)
+# Default deployment target for older systems
+deploy := MACOSX_DEPLOYMENT_TARGET=10.3
+arch :=
+# Use proper macOS version detection for build configuration
+ifneq ($(is_sequoia_or_later), 0)
+	proj := DirectHW.xcodeproj
+	build := build/build15
+	# Modern Xcode (16.4+) can still build for 10.6+ deployment
+	deploy := MACOSX_DEPLOYMENT_TARGET=10.6
+ifeq ($(is_arm64_build),1)
+	# Apple Silicon build machine - create universal binary
+	arch := -arch x86_64 -arch arm64
+else
+	# Intel build machine - x86_64 only
+	arch := -arch x86_64
+endif
+else ifneq ($(is_sonoma_or_later), 0)
+	proj := DirectHW.xcodeproj
+	build := build/build14
+	sdk := -sdk macosx
+	deploy := MACOSX_DEPLOYMENT_TARGET=10.6
+ifeq ($(is_arm64_build),1)
+	arch := -arch x86_64 -arch arm64
+else
+	arch := -arch x86_64
+endif
+else ifneq ($(is_ventura_or_later), 0)
+	proj := DirectHW.xcodeproj
+	build := build/build13
+	sdk := -sdk macosx
+	deploy := MACOSX_DEPLOYMENT_TARGET=10.6
+ifeq ($(is_arm64_build),1)
+	arch := -arch x86_64 -arch arm64
+else
+	arch := -arch x86_64
+endif
+else ifneq ($(is_monterey_or_later), 0)
+	proj := DirectHW.xcodeproj
+	build := build/build12
+	sdk := -sdk macosx
+	deploy := MACOSX_DEPLOYMENT_TARGET=10.6
+ifeq ($(is_arm64_build),1)
+	arch := -arch x86_64 -arch arm64
+else
+	arch := -arch x86_64
+endif
+else ifneq ($(is_big_sur_or_later), 0)
+	proj := DirectHW.xcodeproj
 	build := build/build11
+	sdk := -sdk macosx
+	deploy := MACOSX_DEPLOYMENT_TARGET=10.6
+ifeq ($(is_arm64_build),1)
+	arch := -arch x86_64 -arch arm64
+else
+	arch := -arch x86_64
 endif
-ifeq ($(is10_15), 1)
+else ifneq ($(is_catalina_or_later), 0)
+	proj := DirectHW.xcodeproj
 	build := build/build10.15
-endif
-ifeq ($(is10_14), 1)
+	sdk := -sdk macosx
+	# Catalina (10.15+) dropped 32-bit support completely
+	arch := -arch x86_64
+else ifneq ($(is_mojave_or_later), 0)
+	proj := DirectHW.xcodeproj
 	build := build/build10.14
-endif
-ifeq ($(is10_13), 1)
+	sdk := -sdk macosx10.14
+	arch := -arch i386 -arch x86_64
+else ifneq ($(is_high_sierra_or_later), 0)
 	proj := DirectHW.xcodeproj
 	build := build/build10.13
 	sdk := -sdk macosx10.13
-	arch := -arch x86_64
-endif
-ifeq ($(is10_12), 1)
+	arch := -arch i386 -arch x86_64
+else ifneq ($(is_sierra_or_later), 0)
 	proj := DirectHW10.6.xcodeproj
 	build := build/build10.12
-	sdk := 
-	deploy := 
-endif
-ifeq ($(is10_11), 1)
+	sdk :=
+	deploy :=
+else ifneq ($(is_el_capitan_or_later), 0)
 	proj := DirectHW10.6.xcodeproj
 	build := build/build10.11
-	sdk := 
-	deploy := 
-endif
-ifeq ($(is10_10), 1)
+	sdk :=
+	deploy :=
+else ifneq ($(is_yosemite_or_later), 0)
 	proj := DirectHW10.6.xcodeproj
 	build := build/build10.10
-	sdk := 
-	deploy := 
-endif
-ifeq ($(is10_9), 1)
+	sdk :=
+	deploy :=
+else ifneq ($(is_mavericks_or_later), 0)
 	proj := DirectHW10.6.xcodeproj
 	build := build/build10.9
-	sdk := 
-	deploy := 
-endif
-ifeq ($(is10_9plus), 1)
+	sdk :=
+	deploy :=
 	extensions := /Library/Extensions
-endif
-ifeq ($(is10_8), 1)
+else ifneq ($(is_mountain_lion_or_later), 0)
 	proj := DirectHW10.6.xcodeproj
 	build := build/build10.8
-	sdk := 
-	deploy := 
-endif
-ifeq ($(is10_7), 1)
+	sdk :=
+	deploy :=
+else ifneq ($(is_lion_or_later), 0)
 	proj := DirectHW10.6.xcodeproj
 	build := build/build10.7
-	sdk := 
-	deploy := 
-endif
-ifeq ($(is10_6), 1)
+	sdk :=
+	deploy :=
+else ifneq ($(is_snow_leopard_or_later), 0)
 	proj := DirectHW10.6.xcodeproj
 	build := build/build10.6
-	sdk := 
-	deploy := 
-endif
-ifeq ($(is10_5), 1)
+	sdk :=
+	deploy :=
+else ifneq ($(is_leopard_or_later), 0)
 	proj := DirectHW10.5.xcodeproj
 	build := build/build10.5
 	debugsym := -g
-	sdk := 
-	deploy := 
-endif
-ifeq ($(is10_4), 1)
+	sdk :=
+	deploy :=
+else ifneq ($(is_tiger_or_later), 0)
 	proj := DirectHW10.4.xcodeproj
 	build := build/build10.4
-	sdk := 
-	deploy := 
+	sdk :=
+	deploy :=
 endif
 
 main:
-	xcodebuild -alltargets -project $(proj) $(sdk) $(deploy) $(arch) SYMROOT=$(build)
+	@echo "=== Attempting Xcode build ===" && \
+	BUILD_LOG="$(build)/xcode_build.log" && \
+	mkdir -p $(build) && \
+	if xcodebuild -alltargets -project $(proj) $(sdk) $(deploy) $(arch) SYMROOT=$(build) 2> "$$BUILD_LOG"; then \
+		echo "✅ Xcode build succeeded"; \
+	else \
+		echo "❌ Xcode build failed, falling back to Command Line Tools"; \
+		if [ -f "$$BUILD_LOG" ] && [ -s "$$BUILD_LOG" ]; then \
+			echo "Xcode build errors:"; \
+			cat "$$BUILD_LOG"; \
+		fi; \
+		$(MAKE) libs-fallback; \
+	fi
 
 libs: DirectHW.c DirectHW.h
-	$(CC) DirectHW.c -dynamiclib -framework IOKit -o $(build)/Release/libDirectHW.dylib $(debugsym)
+	mkdir -p $(build)/Release
+ifneq ($(is_big_sur_or_later)$(is_monterey_or_later)$(is_ventura_or_later)$(is_sonoma_or_later)$(is_sequoia_or_later),0)
+ifeq ($(is_arm64_build),1)
+	# Apple Silicon build machine - create universal binary
+	$(CC) -arch x86_64 -arch arm64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+else
+	# Intel build machine - x86_64 only for Apple Silicon era macOS
+	$(CC) -arch x86_64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+endif
+else ifneq ($(is_catalina_or_later),0)
+	# Catalina (10.15+) - 64-bit only
+	$(CC) -arch x86_64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+else ifneq ($(is_mojave_or_later)$(is_high_sierra_or_later),0)
+	# Mojave (10.14) and High Sierra (10.13) - last versions with 32-bit support
+	$(CC) -arch i386 -arch x86_64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+else
+	# Older systems - 64-bit only (no ARM64 support)
+	$(CC) -arch x86_64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+endif
+	#$(CC) -static -c DirectHW.c -o $(build)/Release/libDirectHW.a
+
+libs-fallback: DirectHW.c DirectHW.h
+	@echo "=== Building with Command Line Tools (fallback) ==="
+	mkdir -p $(build)/Release
+ifneq ($(is_big_sur_or_later)$(is_monterey_or_later)$(is_ventura_or_later)$(is_sonoma_or_later)$(is_sequoia_or_later),0)
+ifeq ($(is_arm64_build),1)
+	# Apple Silicon build machine - create universal binary
+	$(CC) -arch x86_64 -arch arm64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+else
+	# Intel build machine - x86_64 only for Apple Silicon era macOS
+	$(CC) -arch x86_64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+endif
+else ifneq ($(is_catalina_or_later),0)
+	# Catalina (10.15+) - 64-bit only
+	$(CC) -arch x86_64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+else ifneq ($(is_mojave_or_later)$(is_high_sierra_or_later),0)
+	# Mojave (10.14) and High Sierra (10.13) - last versions with 32-bit support
+	$(CC) -arch i386 -arch x86_64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+else
+	# Older systems - 64-bit only (no ARM64 support)
+	$(CC) -arch x86_64 DirectHW.c -dynamiclib -framework IOKit -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o $(build)/Release/libDirectHW.dylib $(debugsym)
+endif
 	#$(CC) -static -c DirectHW.c -o $(build)/Release/libDirectHW.a
 
 install:
@@ -141,7 +261,12 @@ install:
 	sudo kextunload -v $(extensions)/DirectHW.kext || :
 	sudo kextload -v $(extensions)/DirectHW.kext
 	sudo touch $(extensions) || :
-	command -v kmutil > /dev/null && sudo kmutil install --volume-root / --check-rebuild || :
+	# Use kmutil for macOS 10.13+ (High Sierra and later), kextcache for older versions
+	if [ "$(is_high_sierra_or_later)" != "0" ]; then \
+		sudo kmutil install --volume-root / --check-rebuild || : ; \
+	else \
+		sudo kextcache -system-prelinked-kernel || sudo kextcache -system-cache || : ; \
+	fi
 
 clean:
 	rm -rf $(build)
